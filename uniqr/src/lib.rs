@@ -32,13 +32,32 @@ pub fn run() -> MyResult<()> {
     let args = Args::parse();
 
     let mut file = open(&args.in_file).map_err(|e| format!("{}: {}", args.in_file, e))?;
+    let mut out_file: Box<dyn Write> = match args.out_file {
+        Some(filename) => Box::new(File::create(filename)?),
+        None => Box::new(io::stdout()),
+    };
 
-    let mut last_line = String::new();
-    let mut current_count = 0;
+    let mut print = |count: u64, text: &str| -> MyResult<()> {
+        if count != 0 {
+            write!(
+                out_file,
+                "{}{}{}",
+                if args.count {
+                    format!("{:>4}", count)
+                } else {
+                    "".to_string()
+                },
+                if args.count { " " } else { "" },
+                text
+            )?;
+        }
 
-    let mut results: Vec<String> = vec![];
+        Ok(())
+    };
 
     let mut line = String::new();
+    let mut last_line = String::new();
+    let mut current_count = 0;
 
     loop {
         let bytes = file.read_line(&mut line)?;
@@ -47,53 +66,17 @@ pub fn run() -> MyResult<()> {
         }
 
         if line.trim() != last_line.trim() {
-            dbg!(&line, &last_line);
-            if current_count != 0 {
-                results.push(format!(
-                    "{}{}{}",
-                    if args.count {
-                        format!("{:>4}", current_count)
-                    } else {
-                        "".to_string()
-                    },
-                    if args.count { " " } else { "" },
-                    last_line
-                ));
-                current_count = 0;
-            }
+            print(current_count, &last_line)?;
 
             last_line = line.clone();
+            current_count = 0;
         }
 
         current_count += 1;
         line.clear();
     }
 
-    if current_count != 0 {
-        results.push(format!(
-            "{}{}{}",
-            if args.count {
-                format!("{:>4}", current_count)
-            } else {
-                "".to_string()
-            },
-            if args.count { " " } else { "" },
-            last_line
-        ));
-    }
-
-    if results.len() > 0 {
-        let mut buffer: Box<dyn Write> = match args.out_file {
-            Some(filename) => Box::new(File::create(filename)?),
-            None => Box::new(io::stdout()),
-        };
-
-        for result in results {
-            buffer.write(result.as_bytes())?;
-        }
-
-        buffer.flush()?;
-    }
+    print(current_count, &last_line)?;
 
     Ok(())
 }
